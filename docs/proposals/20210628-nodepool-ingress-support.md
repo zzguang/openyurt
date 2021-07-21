@@ -49,7 +49,7 @@ it also reduces the complexity of NodePool services management.
 
 To enable the ingress feature in OpenYurt NodePool is to fill the gap that current NodePool cannot support:
 - Deploy one ingress controller to the NodePool that needs to enable ingress.
-- Manage the ingress controller authority from NodePool.
+- Expose the ingress controller service to outside of the NodePool.
 - Make ingress controller only cares about the related resources state of its own NodePool.
 - Make ingress feature can work even in autonomy mode.
 - Differentiate the ingress controllers in different NodePool by different ingress class.
@@ -60,19 +60,40 @@ To enable the ingress feature in OpenYurt NodePool is to fill the gap that curre
 Ingress controller service can be exposed through cloud provider SLB in Cloud Native environment, but in the
 Edge environment, no SLB is provided, we can adopt NodePort type service at the current stage, but in future
 we can evaluate whether to leverage metalLB as a feature enhancement, the reference link is shown below:
+
 https://kubernetes.github.io/ingress-nginx/deploy/baremetal/#a-pure-software-solution-metallb
 
 ## Proposal
 
 To implement the ingress feature support in NodePool, we need to nail down the solution design firstly.
 And the design can be separated into 2 parts by our understanding:
+
 1). Ingress controller deployment
+
 	It means to deploy one ingress controller to the NodePool which needs to enable the ingress feature,
 	we can treat it as similar daemonset support from the NodePool level. When the ingress controller is
 	deployed to a NodePool, one node of the NodePool will be elected to host the deployment. The related
 	development is working in process by @kadisi and it is supposed to be open sourced soon.
 
+					                       --------------
+					                       |   client   |
+					                       --------------
+					                       /            \       
+					       --------------       	       --------------       
+					       | NodePool 1 |	      	       | NodePool 2 |
+					       --------------	               --------------
+					        /          \                    /          \ 
+				     --------------  --------------      --------------  --------------         
+				     | EdgeNode 1 |  | NodeNode 2 |	 | EdgeNode 1 |  | EdgeNode 2 |
+				     |            |  |            |      |            |  |            |
+				     |------------|  |            |      |            |  |------------|
+				     ||ingress   ||  |            |      |            |  ||ingress   || 
+				     ||controller||  |            |      |            |  ||controller||
+				     |------------|  |            |      |            |  |------------|
+				     --------------  --------------      --------------  --------------
+				     
 2). Ingress feature implementation
+
 	Once the ingress controller has been deployed to a NodePool, this NodePool has a basic ability to provide
 	the ingress feature, but how to implement the ingress controller and how to adapt it to NodePool?
 	Firstly, to ensure the ingress feature can work even in OpenYurt autonomy mode, the ingress controller
@@ -119,7 +140,7 @@ And the design can be separated into 2 parts by our understanding:
 					        |  ---------------------         |
 					        ----------------------------------
 	Pros: Little effort for it only needs to change some source codes to adapt NodePool
-	Cons: Intrusive to opensource ingress controller, not convenient to upgrade, it's hard to maintain in future
+	Cons: Intrusive to opensource ingress controller, not convenient to upgrade, hard to maintain in future
 
 	2.3). Solution 3: Leverage current opensource ingress controller and add a sidecar to adapt NodePool
 	      By evaluating the functionality and maturity of the opensource ingress controllers, we recommend
@@ -140,11 +161,10 @@ And the design can be separated into 2 parts by our understanding:
 					        |  -------------------    | sidecar   |          |
 					        |                         -------------          |
 					        --------------------------------------------------
-	Pros: None-intrusive to opensource ingress controller, convenient to upgrade, easy to maintain in future
+	Pros: None-intrusive to opensource ingress controller, transparent to Yurthub, convenient to upgrade,
+	      easy to maintain in future
 	Cons: Medium effort for we need to implement an ingress controller sidecar to filter all the ingress related
-	      resources of its own NodePool and communicate with nginx ingress controller for resources state update,
-	      besides, for the sidecar will intercept all the traffic to nginx ingress controller, it improves the
-	      development complexity and may lead to some efficiency loss
+	      resources of its own NodePool and communicate with nginx ingress controller for resources state update
 
 	2.4). Solution 4: Similar to Solution 3, except for it depends on Yurthub to filter the ingress related
 	      resources of its own NodePool, which simplifies the implementation of sidecar
@@ -168,12 +188,43 @@ And the design can be separated into 2 parts by our understanding:
 	      high efficiency and less effort than Solution 3
 	Cons: Ingress controller is not transparent to Yurthub, Yurthub needs to check requests from ingress controller
 	      and add specific filter operation for it
+	
+	Thinking:
+		It seems that we find a common way to add a class of features into OpenYurt nodepool, the features are
+		those that can work directly in K8S cluster, but can not work in OpenYurt nodepool environment, the way is
+		to add a feature specific sidecar to adapt the nodepool, solution 3/4 mentioned above follow this rule. 
+
+		However, any other better solutions for these usage scenarios? Let’s think out of box ……
+	
+	2.5). Solution 5: Similar to Solution 3, except for it implements a NodePool specific sidecar instead of an ingress
+	      controller specific sidecar, the NodePool specific sidecar is mainly responsible for filtering the resources
+	      of its own NodePool, the filtered resources are configurable so that the sidecar can be reused for other
+	      features with similar requirements
+					                                         ------------------
+					                                         | kube-apiserver |
+					                                         ------------------
+					Cloud                                             ^
+					--------------------------------------------------|------------
+					Edge                                              |
+					        ------------------------------------------|-------
+					        |Edge Node                           ----------- |
+					        |                                    | Yurthub | |
+					        |                                    ----------- |
+					        |  -------------------    -------------   ^      |
+					        |  | nginx ingress   |    | nodePool  |   |      |
+					        |  | controller      |--->| specific  |----      |
+					        |  -------------------    | sidecar   |          |
+					        |                         -------------          |
+					        --------------------------------------------------
+	Pros: None-intrusive to opensource ingress controller, convenient to upgrade, easy to maintain in future,
+	      NodePool specific sidecar can be used for a class of features not only ingress
+	Cons: Medium effort for we need to implement a NodePool specific sidecar to filter all the resources of its own
+	      NodePool and communicate with nginx ingress controller for resources state
 
 	Conclusion:
-		By evaluating all the alternatives above, we think Yurthub naturally can take the responsibility to filter the
-		data between Cloud and Edge, so we prefer to Solution 4 currently, thanks @wenjun93 for his great suggestions
-		about this proposal, any other suggestions will also be appreciated, if no different opinions, we will follow
-		Solution 4 to implement the feature.
+		By evaluating all the alternatives above, we prefer to Solution 5 currently, thanks @wenjun93 for his great
+		suggestions about this proposal, any other suggestions will also be appreciated, if no different opinions, 
+		we will follow Solution 5 to implement the feature.
 
 ### User Stories
 
@@ -187,11 +238,11 @@ layer-4 kube-proxy.
 
 ### Implementation Details/Notes/Constraints
 1). Yurt-app-manager:
+
 	- When a NodePool is created, it can be labeled whether to enable the ingress feature, for example:
 	  ```yaml
             nodepool.openyurt.io/ingress-enable: "true"
 	  ```
-	  Whether to enable ingress by default when NodePool created is TBD.
 	- A new CRD will be defined to provide the daemonset support from NodePool level, so that one ingress controller
 	  can be deployed to the NodePool which needs to enable ingress feature.
 	- For every ingress controller deployment in different NodePools, it creates a NodePort type service to expose the
@@ -204,17 +255,20 @@ layer-4 kube-proxy.
 	  ```
 
 2). Nginx ingress controller:
+
 	- Keep the upstream version none-intrusive, so that it will be very convenient to upgrade in future.
 	- It specifies the ingress class to NodePool name so the ingress CR can select the corresponding ingress controller.
 	- It should be granted the authorities to create/update/patch the related resources in kube-system namespace.
 	- It connects with Yurthub to monitor the resources(ingress/service/configmap/secret/endpoint) of its own NodePool.
 
 3). Ingress controller sidecar:
+
 	- When sidecar is launched, it gets the NodePool id it belongs to, and connects to Yurthub to list/watch the NodePool.
 	- When it detects the NodePool annotation below is changed, it will update externalIPs of the corresponding service:
 	  ```yaml
             nodepool.openyurt.io/ingress-ips: "xxx"
 	  ```
+	  
 	- When it detects the NodePool annotation below is changed, it will update the corresponding configmap of the NodePool,
 	  which will trigger the ingress controller to reload nginx config for the resource state sync.
 	  ```yaml

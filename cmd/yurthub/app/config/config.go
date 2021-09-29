@@ -47,6 +47,7 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/filter/initializer"
 	"github.com/openyurtio/openyurt/pkg/yurthub/filter/masterservice"
 	"github.com/openyurtio/openyurt/pkg/yurthub/filter/servicetopology"
+	"github.com/openyurtio/openyurt/pkg/yurthub/filter/ingresscontroller"
 	"github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/meta"
 	"github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/serializer"
 	"github.com/openyurtio/openyurt/pkg/yurthub/storage/factory"
@@ -279,6 +280,7 @@ func registerAllFilters(filters *filter.Filters) {
 	servicetopology.Register(filters)
 	masterservice.Register(filters)
 	discardcloudservice.Register(filters)
+	ingresscontroller.Register(filters)
 }
 
 // createFilterChain return union filters that initializations completed.

@@ -39,15 +39,13 @@ const (
 )
 
 type kubeletOperator struct {
-	openyurtDir     string
-	kubeadmConfPath string
+	openyurtDir string
 }
 
 // NewKubeletOperator create kubeletOperator
-func NewKubeletOperator(openyurtDir, kubeadmConfPath string) *kubeletOperator {
+func NewKubeletOperator(openyurtDir string) *kubeletOperator {
 	return &kubeletOperator{
-		openyurtDir:     openyurtDir,
-		kubeadmConfPath: kubeadmConfPath,
+		openyurtDir: openyurtDir,
 	}
 }
 
@@ -152,7 +150,7 @@ func (op *kubeletOperator) undoAppendConfig() error {
 		return err
 	}
 
-	content := strings.Replace(string(contentbyte), kubeConfigSetup, "", -1)
+	content := strings.ReplaceAll(string(contentbyte), kubeConfigSetup, "")
 	err = ioutil.WriteFile(kubeAdmFlagsEnvFile, []byte(content), fileMode)
 	if err != nil {
 		return err
@@ -187,8 +185,19 @@ func restartKubeletService() error {
 }
 
 // GetApiServerAddress parse apiServer address from conf file
-func GetApiServerAddress(kubeadmConfPath string) (string, error) {
-	kubeletConfPath, err := enutil.GetSingleContentFromFile(kubeadmConfPath, kubeletConfigRegularExpression)
+func GetApiServerAddress(kubeadmConfPaths []string) (string, error) {
+	var kbcfg string
+	for _, path := range kubeadmConfPaths {
+		if exist, _ := enutil.FileExists(path); exist {
+			kbcfg = path
+			break
+		}
+	}
+	if kbcfg == "" {
+		return "", fmt.Errorf("get apiserverAddr err: no file exists in list %s", kubeadmConfPaths)
+	}
+
+	kubeletConfPath, err := enutil.GetSingleContentFromFile(kbcfg, kubeletConfigRegularExpression)
 	if err != nil {
 		return "", err
 	}

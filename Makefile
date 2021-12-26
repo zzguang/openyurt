@@ -69,3 +69,25 @@ e2e:
 
 e2e-tests:
 	bash hack/run-e2e-tests.sh
+
+# create multi-arch manifest
+manifest:
+	bash hack/make-rules/release-manifest.sh
+
+# push generated manifest during 'make manifest'
+push_manifest:
+	bash hack/make-rules/push-manifest.sh
+
+install-golint: ## check golint if not exist install golint tools
+ifeq (, $(shell which golangci-lint))
+	@{ \
+	set -e ;\
+	o install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.31.0 ;\
+	}
+GOLINT_BIN=$(GOBIN)/golangci-lint
+else
+GOLINT_BIN=$(shell which golangci-lint)
+endif
+
+lint: install-golint ## Run go lint against code.
+	$(GOLINT_BIN) run -v

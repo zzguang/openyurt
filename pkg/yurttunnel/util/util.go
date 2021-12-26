@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,7 +34,6 @@ import (
 
 	"github.com/openyurtio/openyurt/pkg/profile"
 	"github.com/openyurtio/openyurt/pkg/projectinfo"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -44,9 +44,13 @@ const (
 	yurttunnelServerHTTPProxyPorts  = "http-proxy-ports"
 	yurttunnelServerHTTPSProxyPorts = "https-proxy-ports"
 	PortsSeparator                  = ","
+	PortPairSeparator               = "="
 
 	KubeletHTTPSPort = "10250"
 	KubeletHTTPPort  = "10255"
+
+	MinPort = 1
+	MaxPort = 65535
 )
 
 var (
@@ -143,12 +147,12 @@ func resolvePorts(portsStr, insecurePort string) []string {
 		return ports
 	}
 
-	isPortPair := strings.Contains(portsStr, "=")
+	isPortPair := strings.Contains(portsStr, PortPairSeparator)
 	parts := strings.Split(portsStr, PortsSeparator)
 	for _, port := range parts {
 		var proxyPort string
 		if isPortPair {
-			subParts := strings.Split(port, "=")
+			subParts := strings.Split(port, PortPairSeparator)
 			if len(subParts) == 2 && strings.TrimSpace(subParts[1]) == insecurePort {
 				proxyPort = strings.TrimSpace(subParts[0])
 			}
@@ -161,7 +165,7 @@ func resolvePorts(portsStr, insecurePort string) []string {
 			if err != nil {
 				klog.Errorf("failed to parse port %s, %v", port, err)
 				continue
-			} else if portInt < 1 || portInt > 65535 {
+			} else if portInt < MinPort || portInt > MaxPort {
 				klog.Errorf("port %s is not invalid port(should be range 1~65535)", port)
 				continue
 			}

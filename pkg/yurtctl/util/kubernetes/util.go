@@ -36,7 +36,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -57,11 +56,8 @@ import (
 	bootstrapapi "k8s.io/cluster-bootstrap/token/api"
 	bootstraputil "k8s.io/cluster-bootstrap/token/util"
 	"k8s.io/klog/v2"
-	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
-	kubeadmcontants "k8s.io/kubernetes/cmd/kubeadm/app/constants"
-	tokenphase "k8s.io/kubernetes/cmd/kubeadm/app/phases/bootstraptoken/node"
 
-	nodeservant "github.com/openyurtio/openyurt/pkg/node-servant"
+	"github.com/openyurtio/openyurt/pkg/util/kubeadmapi"
 	"github.com/openyurtio/openyurt/pkg/yurtctl/constants"
 	"github.com/openyurtio/openyurt/pkg/yurtctl/util"
 	"github.com/openyurtio/openyurt/pkg/yurtctl/util/edgenode"
@@ -70,20 +66,18 @@ import (
 )
 
 const (
-	// RevertJobNameBase is the prefix of the revert ServantJob name
-	RevertJobNameBase = "yurtctl-servant-revert"
 	// DisableNodeControllerJobNameBase is the prefix of the DisableNodeControllerJob name
 	DisableNodeControllerJobNameBase = "yurtctl-disable-node-controller"
 	// EnableNodeControllerJobNameBase is the prefix of the EnableNodeControllerJob name
 	EnableNodeControllerJobNameBase = "yurtctl-enable-node-controller"
 	SystemNamespace                 = "kube-system"
+	// DefaultWaitServantJobTimeout specifies the timeout value of waiting for the ServantJob to be succeeded
+	DefaultWaitServantJobTimeout = time.Minute * 5
 )
 
 var (
 	// PropagationPolicy defines the propagation policy used when deleting a resource
 	PropagationPolicy = metav1.DeletePropagationBackground
-	// WaitServantJobTimeout specifies the timeout value of waiting for the ServantJob to be succeeded
-	WaitServantJobTimeout = time.Minute * 2
 	// CheckServantJobPeriod defines the time interval between two successive ServantJob statu's inspection
 	CheckServantJobPeriod = time.Second * 10
 	// ValidServerVersions contains all compatible server version
@@ -94,7 +88,9 @@ var (
 		"1.14", "1.14+",
 		"1.16", "1.16+",
 		"1.18", "1.18+",
-		"1.20", "1.20+"}
+		"1.19", "1.19+",
+		"1.20", "1.20+",
+		"1.21", "1.21+"}
 )
 
 // CreateServiceAccountFromYaml creates the ServiceAccount from the yaml template.
@@ -157,7 +153,7 @@ func CreateConfigMapFromYaml(cliSet *kubernetes.Clientset, ns, cmTmpl string) er
 	if err != nil {
 		return err
 	}
-	cm, ok := obj.(*v1.ConfigMap)
+	cm, ok := obj.(*corev1.ConfigMap)
 	if !ok {
 		return fmt.Errorf("fail to assert configmap: %v", err)
 	}
@@ -437,7 +433,7 @@ func YamlToObject(yamlContent []byte) (k8sruntime.Object, error) {
 }
 
 // LabelNode add a new label (<key>=<val>) to the given node
-func LabelNode(cliSet *kubernetes.Clientset, node *v1.Node, key, val string) (*v1.Node, error) {
+func LabelNode(cliSet *kubernetes.Clientset, node *corev1.Node, key, val string) (*corev1.Node, error) {
 	node.Labels[key] = val
 	newNode, err := cliSet.CoreV1().Nodes().Update(context.Background(), node, metav1.UpdateOptions{})
 	if err != nil {
@@ -447,7 +443,7 @@ func LabelNode(cliSet *kubernetes.Clientset, node *v1.Node, key, val string) (*v
 }
 
 // AnnotateNode add a new annotation (<key>=<val>) to the given node
-func AnnotateNode(cliSet *kubernetes.Clientset, node *v1.Node, key, val string) (*v1.Node, error) {
+func AnnotateNode(cliSet *kubernetes.Clientset, node *corev1.Node, key, val string) (*corev1.Node, error) {
 	node.Annotations[key] = val
 	newNode, err := cliSet.CoreV1().Nodes().Update(context.Background(), node, metav1.UpdateOptions{})
 	if err != nil {
@@ -491,56 +487,58 @@ func RunJobAndCleanup(cliSet *kubernetes.Clientset, job *batchv1.Job, timeout, p
 	}
 }
 
-// RunServantJobs launch servant jobs on specified nodes
-func RunServantJobs(cliSet *kubernetes.Clientset, tmplCtx map[string]string, nodeNames []string) error {
-	var wg sync.WaitGroup
-	var servantJobTemplate, jobBaseName string
-	action, exist := tmplCtx["action"]
-	if !exist {
-		return errors.New("action is not specified")
-	}
+// RenderServantJob renders servant job for a specified node.
+func RenderServantJob(action string, tmplCtx map[string]string, nodeName string) (*batchv1.Job, error) {
+	var jobTemplate string
 	switch action {
-	case "convert":
-		// TODO use nodeservant.RenderNodeServantJob
-		servantJobTemplate = nodeservant.ConvertServantJobTemplate
-		jobBaseName = nodeservant.ConvertJobNameBase
-	case "revert":
-		servantJobTemplate = constants.RevertServantJobTemplate
-		jobBaseName = RevertJobNameBase
-	case "disable":
-		servantJobTemplate = constants.DisableNodeControllerJobTemplate
-		jobBaseName = DisableNodeControllerJobNameBase
 	case "enable":
-		servantJobTemplate = constants.EnableNodeControllerJobTemplate
-		jobBaseName = EnableNodeControllerJobNameBase
+		jobTemplate = constants.EnableNodeControllerJobTemplate
+		tmplCtx["jobName"] = EnableNodeControllerJobNameBase + "-" + nodeName
+	case "disable":
+		jobTemplate = constants.DisableNodeControllerJobTemplate
+		tmplCtx["jobName"] = DisableNodeControllerJobNameBase + "-" + nodeName
 	default:
-		return fmt.Errorf("unknown action: %s", action)
+		return nil, fmt.Errorf("unknown action: %s", action)
 	}
+	tmplCtx["nodeName"] = nodeName
+	jobYaml, err := tmplutil.SubsituteTemplate(jobTemplate, tmplCtx)
+	if err != nil {
+		return nil, err
+	}
+	srvJobObj, err := YamlToObject([]byte(jobYaml))
+	if err != nil {
+		return nil, err
+	}
+	srvJob, ok := srvJobObj.(*batchv1.Job)
+	if !ok {
+		return nil, errors.New("fail to assert yurtctl-servant job")
+	}
+	return srvJob, nil
+}
 
+// RunServantJobs launch servant jobs on specified nodes and wait all jobs to finish.
+// Succeed jobs will be deleted when finished. Failed jobs are preserved for diagnosis.
+func RunServantJobs(cliSet *kubernetes.Clientset, waitServantJobTimeout time.Duration, getJob func(nodeName string) (*batchv1.Job, error), nodeNames []string) error {
+	var wg sync.WaitGroup
+	jobByNodeName := make(map[string]*batchv1.Job)
 	for _, nodeName := range nodeNames {
-		tmplCtx["jobName"] = jobBaseName + "-" + nodeName
-		tmplCtx["nodeName"] = nodeName
-		jobYaml, err := tmplutil.SubsituteTemplate(servantJobTemplate, tmplCtx)
+		job, err := getJob(nodeName)
 		if err != nil {
-			return err
+			return fmt.Errorf("fail to get job for node %s: %s", nodeName, err)
 		}
-		srvJobObj, err := YamlToObject([]byte(jobYaml))
-		if err != nil {
-			return err
-		}
-		srvJob, ok := srvJobObj.(*batchv1.Job)
-		if !ok {
-			return errors.New("fail to assert yurtctl-servant job")
-		}
+		jobByNodeName[nodeName] = job
+	}
+	for _, nodeName := range nodeNames {
 		wg.Add(1)
+		job := jobByNodeName[nodeName]
 		go func() {
 			defer wg.Done()
-			if err := RunJobAndCleanup(cliSet, srvJob,
-				WaitServantJobTimeout, CheckServantJobPeriod); err != nil {
+			if err := RunJobAndCleanup(cliSet, job,
+				waitServantJobTimeout, CheckServantJobPeriod); err != nil {
 				klog.Errorf("fail to run servant job(%s): %s",
-					srvJob.GetName(), err)
+					job.GetName(), err)
 			} else {
-				klog.Infof("servant job(%s) has succeeded", srvJob.GetName())
+				klog.Infof("servant job(%s) has succeeded", job.GetName())
 			}
 		}()
 	}
@@ -663,11 +661,11 @@ func GetOrCreateJoinTokenString(cliSet *kubernetes.Clientset) (string, error) {
 	}
 
 	klog.V(1).Infoln("[token] creating token")
-	if err := tokenphase.CreateNewTokens(cliSet,
+	if err := kubeadmapi.CreateNewTokens(cliSet,
 		[]kubeadmapi.BootstrapToken{{
 			Token:  token,
-			Usages: kubeadmcontants.DefaultTokenUsages,
-			Groups: kubeadmcontants.DefaultTokenGroups,
+			Usages: kubeadmapi.DefaultTokenUsages,
+			Groups: kubeadmapi.DefaultTokenGroups,
 		}}); err != nil {
 		return "", err
 	}
@@ -690,7 +688,7 @@ func usagesAndGroupsAreValid(token *kubeadmapi.BootstrapToken) bool {
 		return true
 	}
 
-	return sliceEqual(token.Usages, kubeadmcontants.DefaultTokenUsages) && sliceEqual(token.Groups, kubeadmcontants.DefaultTokenGroups)
+	return sliceEqual(token.Usages, kubeadmapi.DefaultTokenUsages) && sliceEqual(token.Groups, kubeadmapi.DefaultTokenGroups)
 }
 
 // find kube-controller-manager deployed through static file

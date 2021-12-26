@@ -41,14 +41,6 @@ func GenTLSConfigUseCertMgrAndCertPool(
 		ClientAuth: tls.VerifyClientCertIfGiven,
 	}
 
-	tlsConfig.GetClientCertificate =
-		func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			cert := m.Current()
-			if cert == nil {
-				return &tls.Certificate{Certificate: nil}, nil
-			}
-			return cert, nil
-		}
 	tlsConfig.GetCertificate =
 		func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 			cert := m.Current()

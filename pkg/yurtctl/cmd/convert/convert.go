@@ -20,12 +20,13 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-
+	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,10 +34,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 	bootstrapapi "k8s.io/cluster-bootstrap/token/api"
 	"k8s.io/klog/v2"
-	clusterinfophase "k8s.io/kubernetes/cmd/kubeadm/app/phases/bootstraptoken/clusterinfo"
 
 	nodeutil "github.com/openyurtio/openyurt/pkg/controller/util/node"
+	nodeservant "github.com/openyurtio/openyurt/pkg/node-servant"
 	"github.com/openyurtio/openyurt/pkg/projectinfo"
+	"github.com/openyurtio/openyurt/pkg/util/kubeadmapi"
 	"github.com/openyurtio/openyurt/pkg/yurtctl/constants"
 	"github.com/openyurtio/openyurt/pkg/yurtctl/lock"
 	enutil "github.com/openyurtio/openyurt/pkg/yurtctl/util/edgenode"
@@ -73,6 +75,7 @@ type ConvertOptions struct {
 	Provider                   Provider
 	YurhubImage                string
 	YurthubHealthCheckTimeout  time.Duration
+	waitServantJobTimeout      time.Duration
 	YurtControllerManagerImage string
 	NodeServantImage           string
 	YurttunnelServerImage      string
@@ -103,13 +106,16 @@ func NewConvertCmd() *cobra.Command {
 		Short: "Converts the kubernetes cluster to a yurt cluster",
 		Run: func(cmd *cobra.Command, _ []string) {
 			if err := co.Complete(cmd.Flags()); err != nil {
-				klog.Fatalf("fail to complete the convert option: %s", err)
+				klog.Errorf("fail to complete the convert option: %s", err)
+				os.Exit(1)
 			}
 			if err := co.Validate(); err != nil {
-				klog.Fatalf("convert option is invalid: %s", err)
+				klog.Errorf("convert option is invalid: %s", err)
+				os.Exit(1)
 			}
 			if err := co.RunConvert(); err != nil {
-				klog.Fatalf("fail to convert kubernetes to yurt: %s", err)
+				klog.Errorf("fail to convert kubernetes to yurt: %s", err)
+				os.Exit(1)
 			}
 		},
 	}
@@ -123,6 +129,8 @@ func NewConvertCmd() *cobra.Command {
 		"The yurthub image.")
 	cmd.Flags().Duration("yurthub-healthcheck-timeout", defaultYurthubHealthCheckTimeout,
 		"The timeout for yurthub health check.")
+	cmd.Flags().Duration("wait-servant-job-timeout", kubeutil.DefaultWaitServantJobTimeout,
+		"The timeout for servant-job run check.")
 	cmd.Flags().String("yurt-controller-manager-image",
 		"openyurt/yurt-controller-manager:latest",
 		"The yurt-controller-manager image.")
@@ -209,6 +217,12 @@ func (co *ConvertOptions) Complete(flags *pflag.FlagSet) error {
 		return err
 	}
 	co.YurthubHealthCheckTimeout = yurthubHealthCheckTimeout
+
+	waitServantJobTimeout, err := flags.GetDuration("wait-servant-job-timeout")
+	if err != nil {
+		return err
+	}
+	co.waitServantJobTimeout = waitServantJobTimeout
 
 	ycmi, err := flags.GetString("yurt-controller-manager-image")
 	if err != nil {
@@ -327,7 +341,9 @@ func (co *ConvertOptions) RunConvert() (err error) {
 	if err != nil {
 		return
 	}
+	nodeNameSet := make(map[string]struct{})
 	for _, node := range nodeLst.Items {
+		nodeNameSet[node.GetName()] = struct{}{}
 		if !isNodeReady(&node.Status) {
 			err = fmt.Errorf("the status of node: %s is not 'Ready'", node.Name)
 			return
@@ -338,6 +354,12 @@ func (co *ConvertOptions) RunConvert() (err error) {
 		}
 		if !strutil.IsInStringLst(co.CloudNodes, node.GetName()) {
 			edgeNodeNames = append(edgeNodeNames, node.GetName())
+		}
+	}
+	// make sure all cloud nodes are kubernetes nodes
+	for _, v := range co.CloudNodes {
+		if _, ok := nodeNameSet[v]; !ok {
+			return fmt.Errorf("the node %s is not a kubernetes node", v)
 		}
 	}
 	klog.V(4).Info("the status of all nodes are satisfied")
@@ -392,12 +414,13 @@ func (co *ConvertOptions) RunConvert() (err error) {
 		return fmt.Errorf("fail to deploy yurtcontrollermanager: %s", err)
 	}
 	// 4. disable node-controller
-	ctx := map[string]string{
-		"action":             "disable",
-		"node_servant_image": co.NodeServantImage,
-		"pod_manifest_path":  co.PodMainfestPath,
-	}
-	if err = kubeutil.RunServantJobs(co.clientSet, ctx, kcmNodeNames); err != nil {
+	if err = kubeutil.RunServantJobs(co.clientSet, co.waitServantJobTimeout, func(nodeName string) (*batchv1.Job, error) {
+		ctx := map[string]string{
+			"node_servant_image": co.NodeServantImage,
+			"pod_manifest_path":  co.PodMainfestPath,
+		}
+		return kubeutil.RenderServantJob("disable", ctx, nodeName)
+	}, kcmNodeNames); err != nil {
 		return fmt.Errorf("fail to run DisableNodeControllerJobs: %s", err)
 	}
 	klog.Info("complete disabling node-controller")
@@ -454,8 +477,7 @@ func (co *ConvertOptions) RunConvert() (err error) {
 		return err
 	}
 
-	ctx = map[string]string{
-		"action":             "convert",
+	convertCtx := map[string]string{
 		"node_servant_image": co.NodeServantImage,
 		"yurthub_image":      co.YurhubImage,
 		"joinToken":          joinToken,
@@ -463,14 +485,16 @@ func (co *ConvertOptions) RunConvert() (err error) {
 	}
 
 	if co.YurthubHealthCheckTimeout != defaultYurthubHealthCheckTimeout {
-		ctx["yurthub_healthcheck_timeout"] = co.YurthubHealthCheckTimeout.String()
+		convertCtx["yurthub_healthcheck_timeout"] = co.YurthubHealthCheckTimeout.String()
 	}
 
 	// 9. deploy yurt-hub and reset the kubelet service on edge nodes.
 	if len(edgeNodeNames) != 0 {
 		klog.Infof("deploying the yurt-hub and resetting the kubelet service on edge nodes...")
-		ctx["working_mode"] = string(util.WorkingModeEdge)
-		if err = kubeutil.RunServantJobs(co.clientSet, ctx, edgeNodeNames); err != nil {
+		convertCtx["working_mode"] = string(util.WorkingModeEdge)
+		if err = kubeutil.RunServantJobs(co.clientSet, co.waitServantJobTimeout, func(nodeName string) (*batchv1.Job, error) {
+			return nodeservant.RenderNodeServantJob("convert", convertCtx, nodeName)
+		}, edgeNodeNames); err != nil {
 			return fmt.Errorf("fail to run ServantJobs: %s", err)
 		}
 		klog.Info("complete deploying yurt-hub on edge nodes")
@@ -478,8 +502,10 @@ func (co *ConvertOptions) RunConvert() (err error) {
 
 	// 10. deploy yurt-hub and reset the kubelet service on cloud nodes
 	klog.Infof("deploying the yurt-hub and resetting the kubelet service on cloud nodes")
-	ctx["working_mode"] = string(util.WorkingModeCloud)
-	if err = kubeutil.RunServantJobs(co.clientSet, ctx, co.CloudNodes); err != nil {
+	convertCtx["working_mode"] = string(util.WorkingModeCloud)
+	if err = kubeutil.RunServantJobs(co.clientSet, co.waitServantJobTimeout, func(nodeName string) (*batchv1.Job, error) {
+		return nodeservant.RenderNodeServantJob("convert", convertCtx, nodeName)
+	}, co.CloudNodes); err != nil {
 		return fmt.Errorf("fail to run ServantJobs: %s", err)
 	}
 	klog.Info("complete deploying yurt-hub on cloud nodes")
@@ -492,10 +518,10 @@ func prepareClusterInfoConfigMap(client *kubernetes.Clientset, file string) erro
 	info, err := client.CoreV1().ConfigMaps(metav1.NamespacePublic).Get(context.Background(), bootstrapapi.ConfigMapClusterInfo, metav1.GetOptions{})
 	if err != nil && apierrors.IsNotFound(err) {
 		// Create the cluster-info ConfigMap with the associated RBAC rules
-		if err := clusterinfophase.CreateBootstrapConfigMapIfNotExists(client, file); err != nil {
+		if err := kubeadmapi.CreateBootstrapConfigMapIfNotExists(client, file); err != nil {
 			return fmt.Errorf("error creating bootstrap ConfigMap, %v", err)
 		}
-		if err := clusterinfophase.CreateClusterInfoRBACRules(client); err != nil {
+		if err := kubeadmapi.CreateClusterInfoRBACRules(client); err != nil {
 			return fmt.Errorf("error creating clusterinfo RBAC rules, %v", err)
 		}
 	} else if err != nil || info == nil {

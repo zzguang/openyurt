@@ -71,6 +71,7 @@ func Register(cmr *hubcert.CertificateManagerRegistry) {
 
 type yurtHubCertManager struct {
 	remoteServers         []*url.URL
+	hubCertOrganizations  []string
 	bootstrapConfStore    storage.Store
 	hubClientCertManager  certificate.Manager
 	hubClientCertPath     string
@@ -103,6 +104,7 @@ func NewYurtHubCertManager(cfg *config.YurtHubConfiguration) (interfaces.YurtCer
 
 	ycm := &yurtHubCertManager{
 		remoteServers:         cfg.RemoteServers,
+		hubCertOrganizations:  cfg.YurtHubCertOrganizations,
 		nodeName:              cfg.NodeName,
 		joinToken:             cfg.JoinToken,
 		kubeletRootCAFilePath: cfg.KubeletRootCAFilePath,
@@ -301,13 +303,22 @@ func (ycm *yurtHubCertManager) initClientCertificateManager() error {
 	}
 	ycm.hubClientCertPath = s.CurrentPath()
 
+	orgs := []string{"openyurt:yurthub", "system:nodes"}
+	if len(ycm.hubCertOrganizations) > 0 {
+		for _, v := range ycm.hubCertOrganizations {
+			if v != "openyurt:yurthub" && v != "system:nodes" {
+				orgs = append(orgs, v)
+			}
+		}
+	}
+
 	m, err := certificate.NewManager(&certificate.Config{
 		ClientFn:   ycm.generateCertClientFn,
-		SignerName: certificates.KubeAPIServerClientKubeletSignerName,
+		SignerName: certificates.LegacyUnknownSignerName,
 		Template: &x509.CertificateRequest{
 			Subject: pkix.Name{
 				CommonName:   fmt.Sprintf("system:node:%s", ycm.nodeName),
-				Organization: []string{"system:nodes"},
+				Organization: orgs,
 			},
 		},
 		Usages: []certificates.KeyUsage{

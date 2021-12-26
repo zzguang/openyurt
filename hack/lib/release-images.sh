@@ -18,7 +18,7 @@ set -x
 
 YURT_IMAGE_DIR=${YURT_OUTPUT_DIR}/images
 YURTCTL_SERVANT_DIR=${YURT_ROOT}/config/yurtctl-servant
-DOCKER_BUILD_BASE_IDR=$YURT_ROOT/dockerbuild
+DOCKER_BUILD_BASE_DIR=$YURT_ROOT/dockerbuild
 YURT_BUILD_IMAGE="golang:1.15-alpine"
 #REPO="openyurt"
 #TAG="v0.2.0"
@@ -49,7 +49,7 @@ readonly region=${REGION:-us}
 # $1: component name
 # $2: arch
 function get_image_name {
-    # If ${GIT_COMMIT} is not at a tag, add commit to the image tag. 
+    # If ${GIT_COMMIT} is not at a tag, add commit to the image tag.
     if [[ -z $(git tag --points-at ${GIT_COMMIT}) ]]; then
         yurt_component_image="${REPO}/$1:${TAG}-$2-$(echo ${GIT_COMMIT} | cut -c 1-7)"
     else
@@ -58,6 +58,7 @@ function get_image_name {
 
     echo ${yurt_component_image}
 }
+
 
 function build_multi_arch_binaries() {
     local docker_run_opts=(
@@ -105,15 +106,13 @@ function build_docker_image() {
            local binary_name=$(get_output_name $binary)
            local binary_path=${YURT_LOCAL_BIN_DIR}/${SUPPORTED_OS}/${arch}/${binary_name}
            if [ -f ${binary_path} ]; then
-               local docker_build_path=${DOCKER_BUILD_BASE_IDR}/${SUPPORTED_OS}/${arch}
+               local docker_build_path=${DOCKER_BUILD_BASE_DIR}/${SUPPORTED_OS}/${arch}
                local docker_file_path=${docker_build_path}/Dockerfile.${binary_name}-${arch}
                mkdir -p ${docker_build_path}
-
-               local yurt_component_name
+               local yurt_component_name=$(get_component_name $binary_name)
                local base_image
                if [[ ${binary} =~ yurtctl ]]
                then
-                 yurt_component_name="yurtctl-servant"
                  case $arch in
                   amd64)
                       base_image="amd64/alpine:3.9"
@@ -134,7 +133,6 @@ ADD ${binary_name} /usr/local/bin/yurtctl
 EOF
                elif [[ ${binary} =~ yurt-node-servant ]];
                then
-                   yurt_component_name="node-servant"
                  case $arch in
                   amd64)
                       base_image="amd64/alpine:3.9"
@@ -157,7 +155,6 @@ RUN chmod +x /usr/local/bin/entry.sh
 ADD ${binary_name} /usr/local/bin/node-servant
 EOF
                else
-                 yurt_component_name=${binary_name}
                  base_image="k8s.gcr.io/debian-iptables-${arch}:v11.0.2"
                  cat <<EOF > "${docker_file_path}"
 FROM ${base_image}
@@ -169,7 +166,7 @@ EOF
                yurt_component_image=$(get_image_name ${yurt_component_name} ${arch})
                ln "${binary_path}" "${docker_build_path}/${binary_name}"
                docker build --no-cache -t "${yurt_component_image}" -f "${docker_file_path}" ${docker_build_path}
-               echo ${yurt_component_image} >> ${DOCKER_BUILD_BASE_IDR}/images.list
+               echo ${yurt_component_image} >> ${DOCKER_BUILD_BASE_DIR}/images.list
                docker save ${yurt_component_image} > ${YURT_IMAGE_DIR}/${yurt_component_name}-${SUPPORTED_OS}-${arch}.tar
             fi
         done
@@ -179,15 +176,15 @@ EOF
 build_images() {
     # Always clean first
     rm -Rf ${YURT_OUTPUT_DIR}
-    rm -Rf ${DOCKER_BUILD_BASE_IDR}
+    rm -Rf ${DOCKER_BUILD_BASE_DIR}
     mkdir -p ${YURT_LOCAL_BIN_DIR}
     mkdir -p ${YURT_IMAGE_DIR}
-    mkdir -p ${DOCKER_BUILD_BASE_IDR}
+    mkdir -p ${DOCKER_BUILD_BASE_DIR}
 
     build_multi_arch_binaries
     build_docker_image
 }
 
 push_images() {
-    cat ${DOCKER_BUILD_BASE_IDR}/images.list | xargs -I % sh -c 'echo pushing %; docker push %; echo'
+    cat ${DOCKER_BUILD_BASE_DIR}/images.list | xargs -I % sh -c 'echo pushing %; docker push %; echo'
 }

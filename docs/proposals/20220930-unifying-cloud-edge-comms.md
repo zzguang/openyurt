@@ -65,11 +65,15 @@ traffic channel between cloud-edge or edge-edge. When we think to unify these 2 
 integrate YurtTunnel into Raven to extend Raven scope to cover YurtTunnel features.
 About how to achieve the target in a graceful way, we thought about several solution alternatives.
 
+![yurttunnel-arch](../img/yurttunnel.png)
+
+![raven-arch](../img/raven.png)
+
 ### Raven & YurtTunnel fusion
  The related solution alternatives are described below in details:
 
 1). Solution 1:	Integrate yurttunnel-server and yurttunnel-agent into raven-agent on cloud and edge node
-- This solution aims to integrate YurtTunnel logic into raven-agent and hide its details to users completely,
+- This solution aims to integrate YurtTunnel logic into raven-agent pod and hide its details to users completely,
     so when users deploy Raven into the cluster, YurtTunnel is enabled by default, we can call it "deep fusion".
 
 					        -----------------------------------------
@@ -95,9 +99,9 @@ About how to achieve the target in a graceful way, we thought about several solu
 					        -----------------------------------------
 
 To achieve it, we mainly need to solve 2 problems:
-- On Edge side, integrate yurttunnel-agent logic into raven-agent, no matter the edge node acts as
+- On Edge side, integrate yurttunnel-agent logic into raven-agent pod, no matter the edge node acts as
     gateway or ordinary role.
-- On Cloud side, Integrate yurttunnel-server logic into raven-agent.
+- On Cloud side, Integrate yurttunnel-server logic into raven-agent pod.
 
 On Edge side, since both raven-agent and yurttunnel-agent are deployed by daemonset to edge nodes, it seems applicable to combine them together.
 But on Cloud side we found several tricky issues:
@@ -114,13 +118,14 @@ hide all the YurtTunnel details and integrate it deeply into raven-agent.
 
 2). Solution 2: Integrate yurttunnel-agent into raven-agent while deploying yurttunnel-server independently on cloud side
 - Since we met several tricky problems while integrating yurttunnel-server into raven-agent on cloud side, how about to
-  deploy yurttunnel-server independently on cloud side?
+  deploy yurttunnel-server independently on cloud side? To reduce the confusions to users, we can rename yurttunnel-server
+  to "raven-l7-server".
 
 					        -------------------------------------------
 					        | Cloud Node                              |
-					        | ---------------   --------------------- |
-					        | | raven-agent |   | yurttunnel-server | |
-						| ---------------   --------------------- |
+					        | ---------------     ------------------- |
+					        | | raven-agent |     | raven-l7-server | |
+						| ---------------     ------------------- |
 						----------|-------------------|------------
 					Cloud             |                   |
 					------------------|-------------------|-----------------
@@ -191,28 +196,28 @@ It seems we need to think more about it...
 
 Of course, to make alignment for the whole design, current Raven and YurtTunnel components need to be renamed to
 keep a common style. For example:
-- `yurttunnel-agent`  -->  `raven-tunnel-agent`
-- `yurttunnel-server` -->  `raven-tunnel-server`
-- `raven-agent`       -->  `raven-gateway-agent`
-- `raven-controller-manager`  -->  `raven-gateway-manager`
+- `yurttunnel-agent`  -->  `raven-l7-agent`
+- `yurttunnel-server` -->  `raven-l7-server`
+- `raven-agent`       -->  `raven-l3-agent`
+- `raven-controller-manager`  -->  `raven-l3-controller`
 
 					        ------------------------------------------------------
 					        | Cloud Node 					     |
-						| -------------------------                          |
-						| | raven-gateway-manager |                          |
-						| -------------------------                          |
-					        | -----------------------    ----------------------- |
-					        | | raven-gateway-agent |    | raven-tunnel-server | |
-						| -----------------------    ----------------------- |
+						|    -----------------------                         |
+						|    | raven-l3-controller |                         |
+						|    -----------------------                         |
+					        |    ------------------       -------------------    |
+					        |    | raven-l3-agent |       | raven-l7-server |    |
+						|    ------------------       -------------------    |
 						-------------|--------------------------|-------------
 					Cloud                |                          |
 					---------------------|--------------------------|------------------
 					Edge                 |                          |
 					        -------------|--------------------------|-------------
 					        | Edge Node                                          |
-					        | -----------------------    ----------------------  |
-					        | | raven-gateway-agent |    | raven-tunnel-agent |  |
-						| -----------------------    ----------------------  |
+					        |    ------------------       --------------------   |
+					        |    | raven-l3-agent |       |  raven-l7-agent  |   |
+						|    ------------------       --------------------   |
 						------------------------------------------------------
 
 This "shallow fusion" solution has several advantages:

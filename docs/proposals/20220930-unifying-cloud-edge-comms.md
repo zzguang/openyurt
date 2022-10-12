@@ -65,7 +65,11 @@ traffic channel between cloud-edge or edge-edge. When we think to unify these 2 
 integrate YurtTunnel into Raven to extend Raven scope to cover YurtTunnel features.
 About how to achieve the target in a graceful way, we thought about several solution alternatives.
 
+- YurtTunnel Architecture:
+
 ![yurttunnel-arch](../img/yurttunnel.png)
+
+- Raven Architecture:
 
 ![raven-arch](../img/raven.png)
 

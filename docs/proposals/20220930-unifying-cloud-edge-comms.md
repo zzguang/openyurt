@@ -192,7 +192,7 @@ It seems we need to think more about it...
   they are totally 2 different solutions for different user requirements, they don't depend on each other and there
   are almost nothing in common from design to implementation between them. From the users perspective, they can select
   none/one/both of them according to their usage scenarios. Therefore, comparing to the "deep fusion", how about to implement
-  it in a "shallow" way?
+  it in a "shallow fusion" way?
 - It means that we take YurtTunnel into Raven scope as well, but not merge YurtTunnel components logic into Raven
   components, as a result, the extended Raven includes 2 independent subdomains: Cloud to Edge layer-7 DevOps traffic and
   Cloud-Edge or Edge-Edge layer-3 traffic, they are not coupled to each other, users can select them conveniently by
@@ -229,9 +229,49 @@ This "shallow fusion" solution has several advantages:
 - The architecture is clear and it's convenient for users to select for their usage scenarios.
 - It keeps the core logic of current Raven and YurtTunnel unchanged, so it can be implemented without much effort.
 
-Preference:
-- By evaluating all the alternatives above, I prefer to solution 4 at current stage, if no different opinions,
-  I will follow it to implement the cloud edge unified comms solution for OpenYurt.
+This solution aims to integrate YurtTunnel into Raven in a "shallow fusion" way, which is actually a tradeoff solution
+under the limitation of current Raven and YurtTunnel design, but if we assume YurtTunnel doesn't exist, how will we extend
+the layer-7 DevOps feature basing on Raven architecture? Any other more consistent and unified solution for it?
+
+5). Solution 5: Break the shackle and redesign and reimplement the layer-7 tunnel solution basing on Raven architecture
+- Since it's hard to integrate YurtTunnel into Raven in a "deep fusion" way for the shackle that we want to keep most of the
+  core logic unchanged for current Raven and YurtTunnel, we can break it to open up a new idea: redesign and reimplement layer-7
+  tunnel solution basing on Raven architecture.
+
+					        -------------------------------------------
+					        | Cloud Node                              |
+						|       ---------------------------       |
+						|       | raven-controller-manager|       |
+						|       ---------------------------       |
+					        |       ---------------------------       |
+					        |       | raven-agent             |       |
+						|       |   ------       ------   |       |
+						|       |   | L3 |       | L7 |   |       |
+					        |       |   ------       ------   |       |
+						|       ---------------------------       |
+						---------------------|---------------------
+					Cloud                        |
+					-----------------------------|--------------------------
+					Edge                         |
+					        ---------------------|---------------------
+					        | Edge Node                               |
+					        |       ---------------------------       |
+					        |       | raven-agent             |       |
+						|       |   ------       ------   |       |
+						|       |   | L3 |       | L7 |   |       |
+					        |       |   ------       ------   |       |
+						|       ---------------------------       |
+						-------------------------------------------
+
+This solution is the best solution till now from the design perspective, but it means to re-implement YurtTunnel into Raven,
+which needs much more effort than other solutions.
+
+Conclusion:
+- By evaluating all the alternatives above, and after disscussing with the community members, we achieved an initial agreement:
+	- In the long run, Solution 5 is the best solution to provide a graceful and deeply unified solution to users. Although it needs much more effort.
+	- In the short run, Solution 4 is a tradeoff shallow fusion solution which is acceptable as well at current stage.
+
+We will evaluate the design and effort of solution 5 in the next few weeks, and nail down which one to select afterwards.
 
 ### User Stories
 
@@ -249,4 +289,4 @@ As an end user, I want to send some AI data from Edge NodePool to Cloud for next
 ## Implementation History
 
 - [ ] 09/30/2022: Draft proposal created
-
+- [ ] 10/12/2022: Present proposal at the community meeting

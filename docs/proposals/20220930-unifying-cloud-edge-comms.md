@@ -231,11 +231,11 @@ This "shallow fusion" solution has several advantages:
 
 This solution aims to integrate YurtTunnel into Raven in a "shallow fusion" way, which is actually a tradeoff solution
 under the limitation of current Raven and YurtTunnel design, but if we assume YurtTunnel doesn't exist, how will we extend
-the layer-7 DevOps feature basing on Raven architecture? Any other more consistent and unified solution for it?
+the layer-7 DevOps feature basing on Raven architecture? Let's start the brain storming...
 
-5). Solution 5: Break the shackle and redesign and reimplement the layer-7 tunnel solution basing on Raven architecture
+5). Solution 5: Break the shackle and redesign & reimplement the layer-7 tunnel solution basing on Raven architecture
 - Since it's hard to integrate YurtTunnel into Raven in a "deep fusion" way for the shackle that we want to keep most of the
-  core logic unchanged for current Raven and YurtTunnel, we can break it to open up a new idea: redesign and reimplement layer-7
+  core logic unchanged for current Raven and YurtTunnel, we can break it to open up a new idea: redesign & reimplement layer-7
   tunnel solution basing on Raven architecture.
 
 					        -------------------------------------------
@@ -263,12 +263,12 @@ the layer-7 DevOps feature basing on Raven architecture? Any other more consiste
 						|       ---------------------------       |
 						-------------------------------------------
 
-This solution is the best solution till now from the design perspective, but it means to re-implement YurtTunnel into Raven,
-which needs much more effort than other solutions.
+This solution is the best solution till now from the design perspective, it provides a more consistent and unified solution to users gracefully.
+But it almost means to re-implement YurtTunnel into Raven, which needs much more effort than other solutions.
 
 Conclusion:
 - By evaluating all the alternatives above, and after disscussing with the community members, we achieved an initial agreement:
-	- In the long run, Solution 5 is the best solution to provide a graceful and deeply unified solution to users. Although it needs much more effort.
+	- In the long run, Solution 5 is the best solution to provide a deeply unified solution to users. Although it needs much more effort.
 	- In the short run, Solution 4 is a tradeoff shallow fusion solution which is acceptable as well at current stage.
 
 We will evaluate the design and effort of solution 5 in the next few weeks, and nail down which one to select afterwards.

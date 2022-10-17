@@ -2,6 +2,7 @@
 title: Unify cloud edge comms solution for OpenYurt
 authors:
   - "@zzguang"
+  - "@BSWANG"
 reviewers:
   - "@gnunu"
   - "@LindaYu17"
@@ -264,14 +265,25 @@ the layer-7 DevOps feature basing on Raven architecture? Let's start the brain s
 						-------------------------------------------
 
 This solution is the best solution till now from the design perspective, it provides a more consistent and unified solution to users gracefully.
-But it almost means to re-implement YurtTunnel into Raven, which needs much more effort than other solutions.
+@BSWANG has worked out the initial design about this solution, and the design chart is shown below:
+
+![raven-arch](../img/raven-l7.png)
+
+Extended thinking:
+- We can treat the goal of solution 5 is not only to extend YurtTunnel's features basing on Raven, it actually aims to restructure cloud-edge and edge-edge
+  communication for OpenYurt data plane, we can even take the service mesh features into account to work out a more unified and sustainable solution in future.
 
 Conclusion:
-- By evaluating all the alternatives above, and after disscussing with the community members, we achieved an initial agreement:
-	- In the long run, Solution 5 is the best solution to provide a deeply unified solution to users. Although it needs much more effort.
-	- In the short run, Solution 4 is a tradeoff shallow fusion solution which is acceptable as well at current stage.
+- By evaluating all the alternatives above, and after discussing with the community members, we achieved an initial agreement:
+	- In the short run, solution 4 is a tradeoff shallow fusion solution in order to keep the core logic of Raven and YurtTunnel, which is acceptable
+	  at current stage.
+	- In the long run, solution 5 is the best solution to provide a deeply unified and consistent solution to users although it needs much more effort.
 
-We will evaluate the design and effort of solution 5 in the next few weeks, and nail down which one to select afterwards.
+My Preference:
+- I think we can implement solution 4 as a transitional solution firstly at current stage,  because solution 5 can be treated to be a restructure task for OpenYurt
+  data plane, it needs more time to design/implement/test/bug fix to ensure the stability and performance. The design needs to take most of cloud edge coordination
+  network requirements into account, including service mesh, network stability and performance and etc.
+  We can discuss it in the community meeting and nail down the solution for current stage.
 
 ### User Stories
 

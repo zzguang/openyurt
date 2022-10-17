@@ -294,9 +294,10 @@ Conclusion:
 	- In the long run, solution 5 is the best solution to provide a deeply unified and consistent solution to users although it needs much more effort.
 
 My Preference:
-- I think we can implement solution 4 as a transitional solution firstly at current stage，because solution 5 can be treated to be a restructure task
+- I think we can implement solution 4 as a transitional solution firstly at current stage，because solution 5 can be treated as a restructure task
   for OpenYurt data plane, it needs more time to design/implement/test/bug fix to ensure the stability and performance. The design needs to take most of
-  the cloud edge coordination network requirements into account, including service mesh, network stability and performance and etc.
+  the cloud edge coordination network requirements into account, including service mesh, cloud edge bi-direction communication and etc. Also we need to
+  make some enhancements for the network stability and performance.
   We can discuss it in the community meeting and nail down the final solution for current stage.
 
 ### User Stories

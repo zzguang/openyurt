@@ -235,9 +235,8 @@ under the limitation of current Raven and YurtTunnel design, but if we assume Yu
 the layer-7 DevOps feature basing on Raven architecture? Let's start the brain storming...
 
 5). Solution 5: Break the shackle and redesign & reimplement the layer-7 tunnel solution basing on Raven architecture
-- Since it's hard to integrate YurtTunnel into Raven in a "deep fusion" way for the shackle that we want to keep most of the
-  core logic unchanged for current Raven and YurtTunnel, we can break it to open up a new idea: redesign & reimplement layer-7
-  tunnel solution basing on Raven architecture.
+- Since it's hard to integrate YurtTunnel into Raven in a "deep fusion" way, we can try to break it and open up a new idea:
+  redesign & reimplement layer-7 tunnel solution basing on Raven architecture.
 
 					        -------------------------------------------
 					        | Cloud Node                              |

@@ -7,7 +7,7 @@ reviewers:
   - "@gnunu"
   - "@LindaYu17"
 creation-date: 2022-09-30
-last-updated:
+last-updated: 2022-10-18
 status: provisional
 ---
 
@@ -264,7 +264,13 @@ the layer-7 DevOps feature basing on Raven architecture? Let's start the brain s
 						-------------------------------------------
 
 This solution is the best solution till now from the design perspective, it provides a more consistent and unified solution to users gracefully.
-@BSWANG has worked out the initial design about this solution, and the design chart is shown below:
+@BSWANG has worked out the initial design about this solution, which includes 2 design alternatives:
+
+5.1). L7 proxy depends on the enablement of L3 pod communication
+
+![raven-l7-arch](../img/raven-l7-option1.png)
+
+5.2). L7 proxy decouple with Raven L3 logic
 
 ![raven-l7-arch](../img/raven-l7.png)
 
@@ -278,7 +284,7 @@ Components responsibility:
 - raven-agent as gateway:
 	- Connect the Loadbalancer/EIP exposed by cloud side and establish a tunnel connection to it
 	- Forward the user request to the corresponding L7 proxy according to hostname map
-	- If the node with the nodename lies in the current nodepool, hijack to the corresponding kubelet port directly 
+	- If the node with the nodename lies in the current nodepool, hijack to the corresponding kubelet port directly
 - raven-agent as normal node:
 	- None
 
@@ -289,16 +295,9 @@ Extended thinking:
 
 Conclusion:
 - By evaluating all the alternatives above, and after discussing with the community members, we achieved an initial agreement:
-	- In the short run, solution 4 is a tradeoff shallow fusion solution in order to keep the core logic of Raven and YurtTunnel unchanged, which is
-	  acceptable at current stage.
-	- In the long run, solution 5 is the best solution to provide a deeply unified and consistent solution to users although it needs much more effort.
-
-My Preference:
-- I think we can implement solution 4 as a transitional solution firstly at current stage，because solution 5 can be treated as a restructure task
-  for OpenYurt data plane, it needs more time to design/implement/test/bug fix to ensure the stability and performance. The design needs to take most of
-  the cloud edge coordination network requirements into account, including service mesh, cloud edge bi-direction communication and etc. Also we need to
-  make some enhancements for the network stability and performance.
-  We can discuss it in the community meeting and nail down the final solution for current stage.
+	- In the short run, solution 4 is a tradeoff transition solution in order to keep the core logic of current Raven and YurtTunnel unchanged.
+	- In the long run, solution 5 is the best solution to provide a deeply unified and consistent solution to users although it needs more effort.
+	- To save time, we can start to dive into solution 5 directly, which alternative to select will be nailed down after futher discussion.
 
 ### User Stories
 

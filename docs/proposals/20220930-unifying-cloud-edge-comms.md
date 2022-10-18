@@ -270,9 +270,23 @@ This solution is the best solution till now from the design perspective, it prov
 
 ![raven-l7-arch](../img/raven-l7-option1.png)
 
+- Require users to configure the DNS service of apiserver
+- Raven controller is responsible to udpate CoreDNS configmap and manage the map between nodename and IP address
+- Adapt to most of the popular CNIs such as flannel/calico
+- No extra L7 proxy
+
 5.2). L7 proxy decouple with Raven L3 logic
 
 ![raven-l7-arch](../img/raven-l7.png)
+
+- If any nodepool is created, assume all nodes in the nodepool are interconnected
+- If no nodepool is created on cloud side, assume all the cloud nodes are interconnected
+- If no nodepool is created on edge side, assume every node as a nodepool
+- The gateway node acts as the package forward node
+- Gateway node in edge nodepool keeps long connection with gateway node in cloud nodepool, gateway maintains the connections to it
+- When the cloud components access nodename, the dns service parses the nodename to the internal service clusterIP
+- Cloud gateway node is responsible to forward the request of nodename to the corresponding edge nodepool gateway node
+- Edge gateway node is responsible to forward the request of nodename to the corresponding kubelet port 
 
 Components responsibility:
 - raven-controller-manager:
